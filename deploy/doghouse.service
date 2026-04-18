@@ -1,0 +1,62 @@
+[Unit]
+Description=DogHouse VE.Direct solar telemetry logger
+Documentation=https://github.com/Rabidgeek/DogHouse
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+
+# Run as a dedicated system user. Must be a member of the group that owns
+# /dev/ttyUSB0 (usually `dialout` on Debian/Ubuntu).
+User=doghouse
+Group=doghouse
+SupplementaryGroups=dialout
+
+# Config + executable paths are adjusted by the installer. Defaults below
+# match the install layout in deploy/README.md.
+EnvironmentFile=/etc/doghouse/logger.env
+ExecStart=/opt/doghouse/.venv/bin/python -m doghouse
+WorkingDirectory=/opt/doghouse
+
+# Persistent buffer directory under /var/lib/doghouse, owned by User above.
+StateDirectory=doghouse
+StateDirectoryMode=0750
+
+# Restart policy: crash-loop protection via systemd's default rate limit.
+Restart=always
+RestartSec=5s
+
+# Liveness: the app pings WATCHDOG=1 at WatchdogSec/2. If the main loop
+# deadlocks, systemd kills and restarts.
+WatchdogSec=30s
+TimeoutStopSec=15s
+
+# Logging: journal receives the JSON-per-line stdout.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=doghouse
+
+# Hardening. None of these affect serial or network behaviour.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# Serial access requires DeviceAllow for the USB device class.
+DeviceAllow=char-ttyUSB rw
+DeviceAllow=char-tty rw
+
+[Install]
+WantedBy=multi-user.target
