@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from doghouse.buffer import Buffer, Reading
-from doghouse.normalize import normalize
+from doghouse.normalize import normalize_mppt
 from doghouse.ve_direct_reader import VEDirectReader
 
 if TYPE_CHECKING:
@@ -141,7 +141,7 @@ async def test_end_to_end_read_normalize_buffer(
                 )
             finally:
                 await reader.close()
-        derived = normalize(frame)
+        derived = normalize_mppt(frame)
         # SmartSolar 1.39 simulator emits V, VPV, PPV, I, CS, MPPT, ERR.
         assert "V" in derived
         assert "charge_state_name" in derived

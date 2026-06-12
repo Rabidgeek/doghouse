@@ -1,0 +1,65 @@
+[Unit]
+Description=DogHouse VE.Direct inverter telemetry logger
+Documentation=https://github.com/Rabidgeek/DogHouse
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+
+# Run as the same dedicated system user as the MPPT logger. Must be a member of
+# the group that owns the serial devices (usually `dialout` on Debian/Ubuntu).
+User=doghouse
+Group=doghouse
+SupplementaryGroups=dialout
+
+# Inverter instance: its OWN env file (own by-id SERIAL_PORT, SOURCE_TYPE=inverter,
+# DEVICE_ID, BUFFER_DB_PATH, HEALTH_PORT). Same executable + working dir as the
+# MPPT unit; the two instances are independent processes sharing nothing but the
+# code and the state directory (distinct buffer files within it).
+EnvironmentFile=/etc/doghouse/logger-inverter.env
+ExecStart=/opt/doghouse/.venv/bin/python -m doghouse
+WorkingDirectory=/opt/doghouse
+
+# Persistent buffer directory under /var/lib/doghouse, owned by User above.
+# Shared with the MPPT unit; each instance writes its own BUFFER_DB_PATH file.
+StateDirectory=doghouse
+StateDirectoryMode=0750
+
+# Restart policy: crash-loop protection via systemd's default rate limit.
+Restart=always
+RestartSec=5s
+
+# Liveness: the app pings WATCHDOG=1 at WatchdogSec/2. If the main loop
+# deadlocks, systemd kills and restarts.
+WatchdogSec=30s
+TimeoutStopSec=15s
+
+# Logging: journal receives the JSON-per-line stdout.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=doghouse-inverter
+
+# Hardening. None of these affect serial or network behaviour.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# Serial access requires DeviceAllow for the USB device class.
+DeviceAllow=char-ttyUSB rw
+DeviceAllow=char-tty rw
+
+[Install]
+WantedBy=multi-user.target

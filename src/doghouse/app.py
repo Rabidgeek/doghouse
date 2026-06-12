@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from doghouse import sd_notify
 from doghouse.buffer import Buffer, Reading
 from doghouse.health import HealthServer, HealthState
-from doghouse.normalize import normalize
+from doghouse.normalize import Normalizer, get_normalizer
 from doghouse.sync import HttpPoster, SyncWorker
 from doghouse.ve_direct_reader import VEDirectReader
 
@@ -36,6 +36,10 @@ async def run(settings: Settings) -> None:
     the others — partial-running services are worse than fast restart
     via systemd.
     """
+    # Resolve the normalizer for this source up front — a bad SOURCE_TYPE should
+    # crash at startup with a clear message, not silently mis-normalize frames.
+    normalizer = get_normalizer(settings.SOURCE_TYPE)
+
     state = HealthState(started_at=time.time())
 
     async with contextlib.AsyncExitStack() as stack:
@@ -91,6 +95,7 @@ async def run(settings: Settings) -> None:
                     reader=reader,
                     buffer=buffer,
                     state=state,
+                    normalizer=normalizer,
                     installation_id=settings.INSTALLATION_ID,
                     device_id=settings.DEVICE_ID,
                     interval_s=settings.SAMPLE_INTERVAL_S,
@@ -118,6 +123,7 @@ async def _sample_loop(
     reader: VEDirectReader,
     buffer: Buffer,
     state: HealthState,
+    normalizer: Normalizer,
     installation_id: str,
     device_id: str,
     interval_s: float,
@@ -128,7 +134,7 @@ async def _sample_loop(
         while True:
             raw = await reader.read_frame()
             ts = time.time()
-            derived = normalize(raw)
+            derived = normalizer(raw)
             inserted = await buffer.insert(
                 Reading(
                     ts_unix=ts,

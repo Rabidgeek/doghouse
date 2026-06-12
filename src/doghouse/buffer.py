@@ -50,7 +50,7 @@ class Reading:
     installation_id: str
     device_id: str
     raw: dict[str, str]
-    derived: dict[str, float | str | None]
+    derived: dict[str, float | str | list[str] | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +62,7 @@ class BufferedReading:
     installation_id: str
     device_id: str
     raw: dict[str, str]
-    derived: dict[str, float | str | None]
+    derived: dict[str, float | str | list[str] | None]
     sync_attempts: int
 
 

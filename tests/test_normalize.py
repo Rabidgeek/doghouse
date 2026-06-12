@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from doghouse.normalize import normalize
+from doghouse.normalize import normalize_mppt
 
 # Golden raw frame lifted verbatim from the project spec.
 _GOLDEN_RAW: dict[str, str] = {
@@ -26,7 +26,7 @@ _GOLDEN_RAW: dict[str, str] = {
 
 
 def test_golden_frame_matches_spec_example() -> None:
-    out = normalize(_GOLDEN_RAW)
+    out = normalize_mppt(_GOLDEN_RAW)
     assert out["V"] == pytest.approx(12.8)
     assert out["VPV"] == pytest.approx(33.55)
     assert out["I"] == pytest.approx(5.9)
@@ -45,23 +45,23 @@ def test_golden_frame_matches_spec_example() -> None:
 
 def test_input_not_mutated() -> None:
     snapshot = dict(_GOLDEN_RAW)
-    normalize(_GOLDEN_RAW)
+    normalize_mppt(_GOLDEN_RAW)
     assert snapshot == _GOLDEN_RAW
 
 
 def test_unknown_fields_ignored() -> None:
-    out = normalize({"V": "12800", "FOO": "bar", "LOAD": "ON"})
+    out = normalize_mppt({"V": "12800", "FOO": "bar", "LOAD": "ON"})
     assert out == {"V": pytest.approx(12.8)}
 
 
 def test_negative_current_preserved() -> None:
-    out = normalize({"V": "12800", "I": "-1500"})
+    out = normalize_mppt({"V": "12800", "I": "-1500"})
     assert out["I"] == pytest.approx(-1.5)
     assert out["P_battery_watts"] == pytest.approx(-19.2, rel=1e-3)
 
 
 def test_missing_fields_omitted() -> None:
-    out = normalize({"V": "12800"})
+    out = normalize_mppt({"V": "12800"})
     assert "I" not in out
     assert "P_battery_watts" not in out
     assert "charge_state_name" not in out
@@ -80,11 +80,11 @@ def test_missing_fields_omitted() -> None:
     ],
 )
 def test_charge_state_names(code: str, expected: str) -> None:
-    assert normalize({"CS": code})["charge_state_name"] == expected
+    assert normalize_mppt({"CS": code})["charge_state_name"] == expected
 
 
 def test_charge_state_unknown_surfaces() -> None:
-    assert normalize({"CS": "99"})["charge_state_name"] == "unknown-99"
+    assert normalize_mppt({"CS": "99"})["charge_state_name"] == "unknown-99"
 
 
 @pytest.mark.parametrize(
@@ -96,7 +96,7 @@ def test_charge_state_unknown_surfaces() -> None:
     ],
 )
 def test_mppt_state_names(code: str, expected: str) -> None:
-    assert normalize({"MPPT": code})["mppt_state_name"] == expected
+    assert normalize_mppt({"MPPT": code})["mppt_state_name"] == expected
 
 
 @pytest.mark.parametrize(
@@ -115,20 +115,20 @@ def test_mppt_state_names(code: str, expected: str) -> None:
     ],
 )
 def test_error_codes_decoded(code: str, expected: str) -> None:
-    assert normalize({"ERR": code})["error_name"] == expected
+    assert normalize_mppt({"ERR": code})["error_name"] == expected
 
 
 def test_error_zero_is_null() -> None:
-    assert normalize({"ERR": "0"})["error_name"] is None
+    assert normalize_mppt({"ERR": "0"})["error_name"] is None
 
 
 def test_error_unknown_surfaces() -> None:
-    assert normalize({"ERR": "123"})["error_name"] == "unknown-123"
+    assert normalize_mppt({"ERR": "123"})["error_name"] == "unknown-123"
 
 
 def test_malformed_int_dropped(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level("WARNING", logger="doghouse.normalize"):
-        out = normalize({"V": "12800", "I": "not-a-number"})
+        out = normalize_mppt({"V": "12800", "I": "not-a-number"})
     assert out["V"] == pytest.approx(12.8)
     assert "I" not in out
     assert "P_battery_watts" not in out
@@ -136,4 +136,4 @@ def test_malformed_int_dropped(caplog: pytest.LogCaptureFixture) -> None:
 
 
 def test_empty_input_is_empty_output() -> None:
-    assert normalize({}) == {}
+    assert normalize_mppt({}) == {}
