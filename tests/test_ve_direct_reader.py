@@ -6,6 +6,7 @@ can exercise reconnect and backoff logic without real serial hardware.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -45,14 +46,56 @@ class _FactoryRecorder:
     def __init__(self, scripts: list[list[Any]]) -> None:
         self._scripts = list(scripts)
         self.instances: list[_FakeVedirect] = []
+        self.serial_confs: list[dict[str, Any]] = []
 
     def __call__(self, serial_conf: dict[str, Any]) -> _FakeVedirect:
-        del serial_conf
+        self.serial_confs.append(serial_conf)
         if not self._scripts:
             raise RuntimeError("no more fake instances scripted")
         fake = _FakeVedirect(self._scripts.pop(0))
         self.instances.append(fake)
         return fake
+
+
+_BY_ID = "/dev/serial/by-id/usb-VictronEnergy_BV_VE_Direct_cable_VE5GZN4D-if00-port0"
+
+
+def test_open_port_passes_bare_path_through() -> None:
+    # A bare /dev/ttyUSBN (and any non-by-id/test port) is handed to vedirect
+    # unchanged — behavior-preserving for existing deploys + the fake-port tests.
+    reader = VEDirectReader("/dev/ttyUSB1", timeout_s=1.0, _factory=_FactoryRecorder([]))
+    assert reader._open_port() == "/dev/ttyUSB1"
+
+
+def test_open_port_resolves_by_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(Path, "resolve", lambda self, strict=False: Path("/dev/ttyUSB0"))
+    monkeypatch.setattr(Path, "exists", lambda self: True)
+    reader = VEDirectReader(_BY_ID, timeout_s=1.0, _factory=_FactoryRecorder([]))
+    # by-id symlink → the real node vedirect-m8 will accept.
+    assert reader._open_port() == "/dev/ttyUSB0"
+
+
+def test_open_port_raises_when_device_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Cable unplugged: the by-id symlink is gone, so resolve() yields the
+    # unresolved (non-device) path and exists() fails. The guard MUST raise so
+    # the reconnect backoff handles it — NOT fall through to vedirect, which
+    # would then auto-detect (and read) a DIFFERENT cable. Do not "simplify" this.
+    monkeypatch.setattr(Path, "resolve", lambda self, strict=False: self)
+    monkeypatch.setattr(Path, "exists", lambda self: False)
+    reader = VEDirectReader(_BY_ID, timeout_s=1.0, _factory=_FactoryRecorder([]))
+    with pytest.raises(OSError):
+        reader._open_port()
+
+
+async def test_factory_receives_resolved_node(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(Path, "resolve", lambda self, strict=False: Path("/dev/ttyUSB0"))
+    monkeypatch.setattr(Path, "exists", lambda self: True)
+    factory = _FactoryRecorder([[{"V": "13200"}]])
+    reader = VEDirectReader(_BY_ID, timeout_s=1.0, _factory=factory)
+    await reader.read_frame()
+    # The wiring: vedirect is built with the RESOLVED node, not the by-id path.
+    assert factory.serial_confs[0] == {"serial_port": "/dev/ttyUSB0"}
+    await reader.close()
 
 
 async def test_read_frame_returns_dict() -> None:

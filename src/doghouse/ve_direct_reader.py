@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from pathlib import Path
 from typing import Any, Final, Protocol
 
 from vedirect_m8.exceptions import VedirectException
@@ -84,7 +85,6 @@ class VEDirectReader:
             raise ValueError("invalid backoff configuration")
         self.port: Final[str] = port
         self.read_timeout_s: Final[int] = max(1, math.ceil(timeout_s))
-        self._serial_conf: dict[str, Any] = {"serial_port": port}
         self._initial_backoff_s = initial_backoff_s
         self._max_backoff_s = max_backoff_s
         self._backoff_s = initial_backoff_s
@@ -137,11 +137,36 @@ class VEDirectReader:
             self._backoff_s = self._initial_backoff_s
             return frame
 
+    def _open_port(self) -> str:
+        """Resolve a ``/dev/serial/by-id`` symlink to its real device node.
+
+        ``vedirect-m8`` only accepts ``/dev/ttyUSBN``/``ACMN`` paths
+        (``is_unix_serial_port_pattern``) and SILENTLY auto-detects the first
+        VE.Direct device for anything else — so handing it a ``by-id`` path makes
+        it read whichever cable enumerates first (the wrong one, once a second
+        device is attached). We resolve the symlink to the node it points at
+        (which vedirect accepts) and re-resolve on every (re)connect, so the
+        reader follows THIS cable across USB re-enumeration. If the ``by-id``
+        symlink is absent (cable unplugged), ``realpath`` yields a non-device
+        path; we raise ``OSError`` so the reconnect backoff handles it — rather
+        than letting vedirect auto-detect a DIFFERENT cable. Bare ``/dev/ttyUSBN``
+        paths (and test ports) pass through unchanged.
+        """
+        p = self.port
+        if "/by-id/" in p or p.startswith("/dev/serial/"):
+            real = str(Path(p).resolve())
+            if not (Path(real).exists() and real.startswith("/dev/tty")):
+                raise OSError(f"VE.Direct device {p} not present (resolved {real!r})")
+            return real
+        return p
+
     def _read_once(self) -> dict[str, str] | None:
         """Synchronous single-frame read. Runs on a worker thread."""
         vedirect = self._vedirect
         if vedirect is None:
-            vedirect = self._factory(self._serial_conf)
+            resolved = self._open_port()
+            _LOG.info("VE.Direct connecting: %s -> %s", self.port, resolved)
+            vedirect = self._factory({"serial_port": resolved})
             self._vedirect = vedirect
         raw = vedirect.read_data_single(timeout=self.read_timeout_s)
         if raw is None:
