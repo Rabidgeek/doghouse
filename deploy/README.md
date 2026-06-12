@@ -33,7 +33,11 @@ sudo $EDITOR /etc/doghouse/logger.env
 Required values (no defaults):
 
 - `INSTALLATION_ID` — stable identifier for this bus/site
-- `DEVICE_ID` — stable identifier for this MPPT
+- `DEVICE_ID` — stable identifier for this device
+- `SERIAL_PORT` — **use a `/dev/serial/by-id/...` path, not a bare `/dev/ttyUSBN`.**
+  With more than one USB-serial device attached, `ttyUSB` numbering can swap
+  across reboots; the by-id path (unique per cable serial) pins this logger to
+  the right device. List them with `ls -l /dev/serial/by-id/`.
 - `SYNC_ENDPOINT_URL` — SOPHIA ingest URL (e.g. `https://sophia:8443/ingest/telemetry`)
 - `SYNC_AUTH_TOKEN` — bearer token issued by SOPHIA
 - `SYNC_TLS_FINGERPRINT` — SHA-256 hex of SOPHIA's TLS cert (colons optional)
@@ -67,7 +71,11 @@ sudo systemctl restart doghouse
 ## Troubleshooting
 
 - **Serial permission denied** — confirm `doghouse` is in `dialout`:
-  `groups doghouse`. Also check `ls -l /dev/ttyUSB0`.
+  `groups doghouse`. Also check the device: `ls -l /dev/serial/by-id/`
+  (and `readlink -f` the by-id path to see which `ttyUSBN` it currently maps to).
+- **Logger reading the wrong device** (e.g. AC_OUT fields in a `solar_mppt`
+  stream) — `SERIAL_PORT` is a bare `ttyUSBN` that swapped on reboot. Pin it to
+  the cable's `/dev/serial/by-id/` path.
 - **TLS fingerprint mismatch** — compute the expected value with
   `openssl s_client -connect sophia:8443 </dev/null | openssl x509 -fingerprint -sha256 -noout`.
 - **Buffer growing without sync** — `curl 127.0.0.1:9100/health` and
