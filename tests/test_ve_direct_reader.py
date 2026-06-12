@@ -94,7 +94,22 @@ async def test_factory_receives_resolved_node(monkeypatch: pytest.MonkeyPatch) -
     reader = VEDirectReader(_BY_ID, timeout_s=1.0, _factory=factory)
     await reader.read_frame()
     # The wiring: vedirect is built with the RESOLVED node, not the by-id path.
-    assert factory.serial_confs[0] == {"serial_port": "/dev/ttyUSB0"}
+    assert factory.serial_confs[0] == {
+        "serial_port": "/dev/ttyUSB0", "baud": 19200, "timeout": 1
+    }
+    await reader.close()
+
+
+async def test_factory_receives_pinned_serial_conf() -> None:
+    factory = _FactoryRecorder([[{"V": "13200"}]])
+    reader = VEDirectReader("/dev/ttyUSB7", timeout_s=1.0, _factory=factory)
+    await reader.read_frame()
+    # Pin the FULL serial_conf against vedirect-m8 default drift: passing only
+    # serial_port lets the library default timeout=0 (non-blocking) → b'' read
+    # race. Exact-dict equality so any new/changed/dropped key fails the test.
+    assert factory.serial_confs[0] == {
+        "serial_port": "/dev/ttyUSB7", "baud": 19200, "timeout": 1
+    }
     await reader.close()
 
 

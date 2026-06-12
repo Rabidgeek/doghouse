@@ -23,6 +23,11 @@ _INITIAL_BACKOFF_S: Final[float] = 1.0
 _MAX_BACKOFF_S: Final[float] = 30.0
 _BACKOFF_FACTOR: Final[float] = 2.0
 
+_VEDIRECT_BAUD: Final[int] = 19200      # VE.Direct text protocol is fixed 19200
+_SERIAL_TIMEOUT_S: Final[int] = 1       # blocking read; frames arrive at 1 Hz.
+                                        # vedirect-m8 requires int. Must be > 0:
+                                        # 0 = non-blocking = b'' race (the bug).
+
 
 class _VedirectProto(Protocol):
     """Subset of the vedirect-m8 ``Vedirect`` API this module depends on."""
@@ -166,7 +171,9 @@ class VEDirectReader:
         if vedirect is None:
             resolved = self._open_port()
             _LOG.info("VE.Direct connecting: %s -> %s", self.port, resolved)
-            vedirect = self._factory({"serial_port": resolved})
+            vedirect = self._factory(
+                {"serial_port": resolved, "baud": _VEDIRECT_BAUD, "timeout": _SERIAL_TIMEOUT_S}
+            )
             self._vedirect = vedirect
         raw = vedirect.read_data_single(timeout=self.read_timeout_s)
         if raw is None:
